@@ -1,16 +1,34 @@
-"""Pydantic request/response models and typed aliases for ltx2_server."""
+# backend/api_types.py
+# Version: V3.0 / deepseek edit - 2026-07-15
+
+"""
+Pydantic request/response models and typed aliases for ltx2_server.
+این فایل شامل تعاریف نوع‌های داده برای API می‌باشد.
+"""
 
 from __future__ import annotations
 
-from typing import Annotated
-from typing import Literal, NamedTuple, TypeAlias
+from typing import Annotated, Literal, NamedTuple, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+
+# ============================================================
+# Type Aliases پایه
+# ============================================================
 NonEmptyPrompt = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+JsonObject: TypeAlias = dict[str, object]
+
+
+# ============================================================
+# Enums و Literals
+# ============================================================
 ModelCheckpointID = Literal[
     "ltx-2.3-22b-distilled",
+    "ltx-2.3-22b-dev",
     "ltx-2.3-spatial-upscaler-x2-1.0",
+    "ltx-2.3-spatial-upscaler-x1.5-1.0",
+    "ltx-2.3-spatial-upscaler-x2-1.1",
     "ltx-2.3-22b-ic-lora-union-control-ref0.5",
     "dpt-hybrid-midas",
     "yolox-l-torchscript",
@@ -18,18 +36,28 @@ ModelCheckpointID = Literal[
     "gemma-3-12b-it-qat-q4_0-unquantized",
     "z-image-turbo",
 ]
-LTXLocalModelId = Literal["ltx-2.3-22b-distilled"]
+
+LTXLocalModelId = Literal["ltx-2.3-22b-distilled", "ltx-2.3-22b-dev"]
+
+# ============================================================
+# تنظیمات ویدیو
+# ============================================================
+LTXVideoGenResolution = Literal["480p", "720p", "1080p", "1440p", "2160p", "2k", "4k"]
+LTXVideoGenDuration = Literal[
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30
+]
+LTXVideoGenFps = Literal[15, 24, 25, 30, 48, 50, 60, 120, 240]
+LTXVideoGenPipeline = Literal["fast", "fast_hq", "pro"]
 
 
 class ImageConditioningInput(NamedTuple):
     """Image conditioning triplet used by all video pipelines."""
-
     path: str
     frame_idx: int
     strength: float
 
 
-JsonObject: TypeAlias = dict[str, object]
 VideoCameraMotion = Literal[
     "none",
     "dolly_in",
@@ -44,10 +72,29 @@ VideoCameraMotion = Literal[
 
 
 # ============================================================
-# Response Models
+# مدل‌های مشخصات (Specs)
 # ============================================================
+class LTXVideoGenerationResolutionSpec(BaseModel):
+    """مشخصات یک رزولوشن خاص: نگاشت FPS به لیست durations مجاز"""
+    fps_to_durations: dict[LTXVideoGenFps, list[LTXVideoGenDuration]]
 
 
+class LTXVideoGenerationSpec(BaseModel):
+    """مشخصات کامل یک مدل برای تولید ویدیو"""
+    display_name: str
+    supported_resolutions_durations: dict[LTXVideoGenResolution, LTXVideoGenerationResolutionSpec]
+    a2v_supported_resolutions_durations: dict[LTXVideoGenResolution, LTXVideoGenerationResolutionSpec] | None = None
+
+
+class LTXVideoGenerationModelSpecItem(BaseModel):
+    """یک آیتم از لیست مشخصات مدل‌ها برای پاسخ API"""
+    pipeline: LTXVideoGenPipeline
+    spec: LTXVideoGenerationSpec
+
+
+# ============================================================
+# مدل‌های Response
+# ============================================================
 class ModelStatusItem(BaseModel):
     id: str
     name: str
@@ -114,7 +161,9 @@ class DownloadProgressErrorResponse(BaseModel):
 
 
 DownloadProgressResponse: TypeAlias = (
-    DownloadProgressRunningResponse | DownloadProgressCompleteResponse | DownloadProgressErrorResponse
+    DownloadProgressRunningResponse |
+    DownloadProgressCompleteResponse |
+    DownloadProgressErrorResponse
 )
 
 
@@ -149,275 +198,62 @@ GenerateImageResponse: TypeAlias = GenerateImageCompleteResponse | GenerateImage
 
 class CancelCancellingResponse(BaseModel):
     status: Literal["cancelling"]
-    id: str
-
-
-class CancelNoActiveGenerationResponse(BaseModel):
-    status: Literal["no_active_generation"]
-
-
-CancelResponse: TypeAlias = CancelCancellingResponse | CancelNoActiveGenerationResponse
-
-
-class RetakeVideoResponse(BaseModel):
-    status: Literal["complete"]
-    video_path: str
-
-
-class RetakePayloadResponse(BaseModel):
-    status: Literal["complete"]
-    result: JsonObject
-
-
-class RetakeCancelledResponse(BaseModel):
-    status: Literal["cancelled"]
-
-
-RetakeResponse: TypeAlias = RetakeVideoResponse | RetakePayloadResponse | RetakeCancelledResponse
-
-
-class IcLoraExtractResponse(BaseModel):
-    conditioning: str
-    original: str
-    conditioning_type: ConditioningType
-    frame_time: float
-
-
-class IcLoraGenerateCompleteResponse(BaseModel):
-    status: Literal["complete"]
-    video_path: str
-
-
-class IcLoraGenerateCancelledResponse(BaseModel):
-    status: Literal["cancelled"]
-
-
-IcLoraGenerateResponse: TypeAlias = IcLoraGenerateCompleteResponse | IcLoraGenerateCancelledResponse
 
 
 # ============================================================
-# HuggingFace auth
+# مدل‌های Request
 # ============================================================
-
-
-class HuggingFaceLoginResponse(BaseModel):
-    client_id: str
-    redirect_uri: str
-    scope: str
-    state: str
-    code_challenge: str
-    code_challenge_method: str
-
-
-class HuggingFaceAuthStatusResponse(BaseModel):
-    status: Literal["authenticated", "pending", "not_authenticated"]
-
-
-class HuggingFaceLogoutResponse(BaseModel):
-    status: Literal["logged_out"]
-
-
-class ModelDownloadStartResponse(BaseModel):
-    status: Literal["started"]
-    message: str
-    sessionId: str
-
-
-class LtxDownloadRecommendationResponse(BaseModel):
-    status: Literal["download"]
-    cps_to_download: list[ModelCheckpointID]
-
-
-class LtxUpgradeRecommendationResponse(BaseModel):
-    status: Literal["upgrade"]
-    ltx_model_id: LTXLocalModelId
-    upgrade_message: str | None = None
-    cps_to_download: list[ModelCheckpointID]
-    cps_to_delete: list[ModelCheckpointID]
-
-
-class LtxOkRecommendationResponse(BaseModel):
-    status: Literal["ok"]
-
-
-LtxRecommendationResponse: TypeAlias = (
-    LtxDownloadRecommendationResponse | LtxUpgradeRecommendationResponse | LtxOkRecommendationResponse
-)
-
-
-class ImageGenRecommendationResponse(BaseModel):
-    cp_to_download: ModelCheckpointID | None
-
-
-class LtxIcLoraRecommendationResponse(BaseModel):
-    cps_to_download: list[ModelCheckpointID]
-
-
-class TextEncoderRecommendationResponse(BaseModel):
-    cp_to_download: ModelCheckpointID | None
-    expected_size_bytes: int
-    expected_size_gb: float
-
-
-class StatusResponse(BaseModel):
-    status: str
-
-
-class HTTPErrorResponse(BaseModel):
-    code: str
-    message: str
-
-
-class LtxInsufficientFundsErrorResponse(BaseModel):
-    code: Literal["LTX_INSUFFICIENT_FUNDS"]
-    message: str
-
-
-# ============================================================
-# Request Models
-# ============================================================
-
-
-LTXVideoGenResolution: TypeAlias = Literal["540p", "720p", "1080p", "1440p", "2160p"]
-LTXVideoGenDuration: TypeAlias = Literal[5, 6, 8, 10, 12, 14, 16, 18, 20]
-LTXVideoGenFps: TypeAlias = Literal[24, 25, 48, 50]
-LTXVideoGenPipeline: TypeAlias = Literal["fast", "pro"]
-
-
-class LTXVideoGenerationResolutionSpec(BaseModel):
-    fps_to_durations: dict[LTXVideoGenFps, list[LTXVideoGenDuration]]
-
-
-class LTXVideoGenerationSpec(BaseModel):
-    display_name: str
-    supported_resolutions_durations: dict[LTXVideoGenResolution, LTXVideoGenerationResolutionSpec]
-    a2v_supported_resolutions_durations: dict[LTXVideoGenResolution, LTXVideoGenerationResolutionSpec] | None = None
-
-
-class LTXVideoGenerationModelSpecItem(BaseModel):
-    pipeline: LTXVideoGenPipeline
-    spec: LTXVideoGenerationSpec
-
-
 class GenerateVideoModelsSpecsResponse(BaseModel):
     local_models: list[LTXVideoGenerationModelSpecItem]
     api_models: list[LTXVideoGenerationModelSpecItem]
+    upscalers: list[ModelCheckpointID] = [
+        "ltx-2.3-spatial-upscaler-x1.5-1.0",
+        "ltx-2.3-spatial-upscaler-x2-1.1",
+    ]
 
 
 class GenerateVideoRequest(BaseModel):
     model_config = ConfigDict(strict=True)
-
+    
     prompt: NonEmptyPrompt
     resolution: LTXVideoGenResolution = "1080p"
     model: LTXVideoGenPipeline = "fast"
+    upscaler: ModelCheckpointID = "ltx-2.3-spatial-upscaler-x1.5-1.0"
     cameraMotion: VideoCameraMotion = "none"
-    negativePrompt: str = ""
     duration: LTXVideoGenDuration = 5
     fps: LTXVideoGenFps = 24
-    audio: bool = False
+    cfgScale: float = Field(default=7.0, ge=1.0, le=20.0)
+    steps: int = Field(default=8, ge=1, le=100)
+    seed: int | None = None
+    imageConditioning: ImageConditioningInput | None = None
     imagePath: str | None = None
     audioPath: str | None = None
-    aspectRatio: Literal["16:9", "9:16"] = "16:9"
+
+
+class GenerateTextRequest(BaseModel):
+    model_config = ConfigDict(strict=True)
+    prompt: NonEmptyPrompt
+
+
+class GenerateTextResponse(BaseModel):
+    text: str
 
 
 class GenerateImageRequest(BaseModel):
     model_config = ConfigDict(strict=True)
-
     prompt: NonEmptyPrompt
-    width: int = Field(default=1024, ge=16)
-    height: int = Field(default=1024, ge=16)
-    numSteps: int = Field(default=4, ge=1)
-    numImages: int = Field(default=1, ge=1)
+    negativePrompt: str = ""
+    imagePath: str | None = None
+    aspectRatio: Literal["1:1", "16:9", "9:16", "4:3", "3:4"] = "1:1"
 
 
-def _default_model_types() -> set[ModelCheckpointID]:
-    return set()
+class GenerateImageResponse(BaseModel):
+    imagePath: str
 
 
-class ModelDownloadRequest(BaseModel):
-    type: Literal["download", "upgrade"] = "download"
-    cp_ids: set[ModelCheckpointID] = Field(default_factory=_default_model_types)
-
-
-ModelAccessStatus: TypeAlias = Literal["authorized", "not_authorized"]
-
-
-class CheckModelAccessRequest(BaseModel):
-    cp_ids: set[ModelCheckpointID] = Field(default_factory=_default_model_types)
-
-
-class CheckModelAccessResponse(BaseModel):
-    access: dict[str, ModelAccessStatus]
-
-
-class ModelDeleteRequest(BaseModel):
-    cp_ids: set[ModelCheckpointID] = Field(default_factory=_default_model_types)
-
-
-GapPromptMode: TypeAlias = Literal["text-to-video", "image-to-video", "text-to-image"]
-
-
-class SuggestGapPromptRequest(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    beforePrompt: str = ""
-    afterPrompt: str = ""
-    beforeFrame: str | None = None
-    afterFrame: str | None = None
-    gapDuration: float = 5
-    mode: GapPromptMode = "text-to-video"
-    inputImage: str | None = None
-
-    @model_validator(mode="after")
-    def _validate_input_image_mode(self) -> "SuggestGapPromptRequest":
-        if self.inputImage is not None and self.mode != "image-to-video":
-            raise ValueError("inputImage is only valid for image-to-video mode")
-        return self
-
-
-RetakeMode: TypeAlias = Literal["replace_audio_and_video", "replace_video", "replace_audio"]
-
-
-class RetakeRequest(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    video_path: str
-    start_time: float
-    duration: float
-    prompt: str = ""
-    mode: RetakeMode = "replace_audio_and_video"
-
-
-ConditioningType: TypeAlias = Literal["canny", "depth"]
-
-
-class IcLoraExtractRequest(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    video_path: str
-    conditioning_type: ConditioningType = "canny"
-    frame_time: float = 0
-
-
-class IcLoraImageInput(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    path: str
-    frame: int = 0
-    strength: float = 1.0
-
-
-def _default_ic_lora_images() -> list[IcLoraImageInput]:
-    return []
-
-
-class IcLoraGenerateRequest(BaseModel):
-    model_config = ConfigDict(strict=True)
-    video_path: str
-    conditioning_type: ConditioningType
-    prompt: NonEmptyPrompt
-    conditioning_strength: float = 1.0
-    num_inference_steps: int = 30
-    cfg_guidance_scale: float = 1.0
-    negative_prompt: str = ""
-    images: list[IcLoraImageInput] = Field(default_factory=_default_ic_lora_images)
+# ============================================================
+# Error Response
+# ============================================================
+class HTTPErrorResponse(BaseModel):
+    status_code: int = Field(..., description="HTTP status code")
+    message: str = Field(..., description="Error message")
