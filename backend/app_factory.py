@@ -1,4 +1,10 @@
-"""FastAPI app factory decoupled from runtime bootstrap side effects."""
+# backend/app_factory.py
+# Version: V2.0 / deepseek edit - 2026-07-15
+
+"""
+FastAPI app factory decoupled from runtime bootstrap side effects.
+این فایل مسئول ساخت و پیکربندی برنامه FastAPI است.
+"""
 
 from __future__ import annotations
 
@@ -32,6 +38,7 @@ from state import init_state_service
 if TYPE_CHECKING:
     from app_handler import AppHandler
 
+
 DEFAULT_ALLOWED_ORIGINS: list[str] = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -57,11 +64,25 @@ def create_app(
     auth_token: str = "",
     admin_token: str = "",
 ) -> FastAPI:
-    """Create a configured FastAPI app bound to the provided handler."""
+    """
+    Create a configured FastAPI app bound to the provided handler.
+    
+    Args:
+        handler: نمونه AppHandler با تمام سرویس‌های پیکربندی شده
+        allowed_origins: لیست origins مجاز برای CORS
+        title: عنوان برنامه
+        auth_token: توکن احراز هویت
+        admin_token: توکن ادمین
+    
+    Returns:
+        FastAPI: نمونه برنامه پیکربندی شده
+    """
     init_state_service(handler)
 
     app = FastAPI(title=title, responses=DEFAULT_ERROR_RESPONSES)
     app.state.admin_token = admin_token  # type: ignore[attr-defined]
+    
+    # ==================== CORS Middleware ====================
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins or DEFAULT_ALLOWED_ORIGINS,
@@ -69,6 +90,7 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # ==================== Authentication Middleware ====================
     @app.middleware("http")
     async def _auth_middleware(  # pyright: ignore[reportUnusedFunction]
         request: Request,
@@ -80,6 +102,7 @@ def create_app(
             return await call_next(request)
         if request.url.path == "/api/auth/huggingface/callback":
             return await call_next(request)
+        
         def _token_matches(candidate: str) -> bool:
             return hmac.compare_digest(candidate, auth_token)
 
@@ -91,6 +114,7 @@ def create_app(
                 status_code=401,
                 content=build_http_error_response(401, "Unauthorized").model_dump(),
             )
+        
         # HTTP: Bearer or Basic auth
         auth_header = request.headers.get("authorization", "")
         if auth_header.startswith("Bearer ") and _token_matches(auth_header[7:]):
@@ -103,11 +127,13 @@ def create_app(
                     return await call_next(request)
             except Exception:
                 pass
+        
         return JSONResponse(
             status_code=401,
             content=build_http_error_response(401, "Unauthorized").model_dump(),
         )
 
+    # ==================== Exception Handlers ====================
     async def _route_http_error_handler(request: Request, exc: Exception) -> JSONResponse:
         if isinstance(exc, HTTPError):
             log_http_error(request, exc)
@@ -151,6 +177,7 @@ def create_app(
     app.add_exception_handler(StarletteHTTPException, _starlette_http_error_handler)
     app.add_exception_handler(Exception, _route_generic_error_handler)
 
+    # ==================== Routers ====================
     app.include_router(health_router)
     app.include_router(generation_router)
     app.include_router(models_router)
