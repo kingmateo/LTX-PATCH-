@@ -1,0 +1,6 @@
+owner: Lightricks
+repo: ltx-desktop
+provider: github
+updaterCacheDirName: ltx-desktop-updater
+publisherName:
+  - Lightricks US Inc
