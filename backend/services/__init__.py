@@ -1,8 +1,13 @@
+# backend/services/__init__.py
+# Version: V2.0 / deepseek edit - 2026-07-15
+
 """State service package exports (interface-first, import-safe)."""
 
 from services.interfaces import (
     DepthProcessorPipeline,
     FastVideoPipeline,
+    HQVideoPipeline,
+    ProVideoPipeline,
     ZitAPIClient,
     ImageGenerationPipeline,
     GpuCleaner,
@@ -34,6 +39,8 @@ __all__ = [
     "TextEncoder",
     "VideoPipelineModelType",
     "FastVideoPipeline",
+    "HQVideoPipeline",
+    "ProVideoPipeline",
     "ZitAPIClient",
     "ImageGenerationPipeline",
     "IcLoraPipeline",
