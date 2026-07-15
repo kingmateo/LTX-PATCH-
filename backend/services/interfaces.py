@@ -1,3 +1,6 @@
+# backend/services/interfaces.py
+# Version: V2.0 / deepseek edit - 2026-07-15
+
 """Compatibility re-exports for service interfaces."""
 
 from __future__ import annotations
@@ -7,6 +10,8 @@ from typing import Literal
 from services.a2v_pipeline.a2v_pipeline import A2VPipeline
 from services.depth_processor_pipeline.depth_processor_pipeline import DepthProcessorPipeline
 from services.fast_video_pipeline.fast_video_pipeline import FastVideoPipeline
+from services.hq_video_pipeline.hq_video_pipeline import HQVideoPipeline
+from services.pro_video_pipeline.pro_video_pipeline import ProVideoPipeline
 from services.zit_api_client.zit_api_client import ZitAPIClient
 from services.gpu_cleaner.gpu_cleaner import GpuCleaner
 from services.gpu_info.gpu_info import GpuInfo, GpuTelemetryPayload
@@ -22,7 +27,7 @@ from services.task_runner.task_runner import TaskRunner
 from services.text_encoder.text_encoder import TextEncoder
 from services.video_processor.video_processor import VideoInfoPayload, VideoProcessor
 
-VideoPipelineModelType = Literal["fast"]
+VideoPipelineModelType = Literal["fast", "fast_hq", "pro"]
 
 __all__ = [
     "A2VPipeline",
@@ -42,6 +47,8 @@ __all__ = [
     "TaskRunner",
     "VideoPipelineModelType",
     "FastVideoPipeline",
+    "HQVideoPipeline",
+    "ProVideoPipeline",
     "ZitAPIClient",
     "ImageGenerationPipeline",
     "IcLoraPipeline",
