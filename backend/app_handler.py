@@ -1,4 +1,10 @@
-"""Application state composition root and dependency wiring."""
+# backend/app_handler.py
+# Version: V3.0 / deepseek edit - 2026-07-15
+
+"""
+Application state composition root and dependency wiring.
+این فایل مسئول سیم‌کشی وابستگی‌ها و ساخت handlers برنامه است.
+"""
 
 from __future__ import annotations
 
@@ -27,6 +33,8 @@ from services.interfaces import (
     A2VPipeline,
     DepthProcessorPipeline,
     FastVideoPipeline,
+    HQVideoPipeline,
+    ProVideoPipeline,
     ZitAPIClient,
     ImageGenerationPipeline,
     GpuCleaner,
@@ -45,7 +53,9 @@ from state.app_state_types import AppState, TextEncoderState
 
 
 class AppHandler:
-    """Composition-only state service exposing typed domain handlers."""
+    """
+    Composition-only state service exposing typed domain handlers.
+    """
 
     def __init__(
         self,
@@ -61,6 +71,8 @@ class AppHandler:
         ltx_api_client: LTXAPIClient,
         zit_api_client: ZitAPIClient,
         fast_video_pipeline_class: type[FastVideoPipeline],
+        hq_video_pipeline_class: type[HQVideoPipeline],
+        pro_video_pipeline_class: type[ProVideoPipeline],
         image_generation_pipeline_class: type[ImageGenerationPipeline],
         ic_lora_pipeline_class: type[IcLoraPipeline],
         depth_processor_pipeline_class: type[DepthProcessorPipeline],
@@ -69,8 +81,6 @@ class AppHandler:
         retake_pipeline_class: type[RetakePipeline],
     ) -> None:
         self.config = config
-
-        # Exposed for tests and diagnostics.
         self.http = http
         self.gpu_cleaner = gpu_cleaner
         self.model_downloader = model_downloader
@@ -79,16 +89,20 @@ class AppHandler:
         self.task_runner = task_runner
         self.ltx_api_client = ltx_api_client
         self.zit_api_client = zit_api_client
+        
+        # Pipeline classes
         self.fast_video_pipeline_class = fast_video_pipeline_class
+        self.hq_video_pipeline_class = hq_video_pipeline_class
+        self.pro_video_pipeline_class = pro_video_pipeline_class
         self.image_generation_pipeline_class = image_generation_pipeline_class
         self.ic_lora_pipeline_class = ic_lora_pipeline_class
         self.depth_processor_pipeline_class = depth_processor_pipeline_class
         self.pose_processor_pipeline_class = pose_processor_pipeline_class
         self.a2v_pipeline_class = a2v_pipeline_class
         self.retake_pipeline_class = retake_pipeline_class
-
+        
         self._lock = threading.RLock()
-
+        
         self.state = AppState(
             downloading_session=None,
             gpu_slot=None,
@@ -101,25 +115,24 @@ class AppHandler:
         # ============================================================
         # Handlers (wired in dependency order)
         # ============================================================
-
         self.settings = SettingsHandler(
             state=self.state,
             lock=self._lock,
             config=config,
         )
-
+        
         self.models = ModelsHandler(
             state=self.state,
             lock=self._lock,
             config=config,
         )
-
+        
         self.hf_auth = HuggingFaceAuthHandler(
             state=self.state,
             lock=self._lock,
             config=config,
         )
-
+        
         self.downloads = DownloadHandler(
             state=self.state,
             lock=self._lock,
@@ -128,19 +141,21 @@ class AppHandler:
             task_runner=task_runner,
             config=config,
         )
-
+        
         self.text = TextHandler(
             state=self.state,
             lock=self._lock,
             config=config,
         )
-
+        
         self.pipelines = PipelinesHandler(
             state=self.state,
             lock=self._lock,
             text_handler=self.text,
             gpu_cleaner=gpu_cleaner,
             fast_video_pipeline_class=fast_video_pipeline_class,
+            hq_video_pipeline_class=hq_video_pipeline_class,
+            pro_video_pipeline_class=pro_video_pipeline_class,
             image_generation_pipeline_class=image_generation_pipeline_class,
             ic_lora_pipeline_class=ic_lora_pipeline_class,
             depth_processor_pipeline_class=depth_processor_pipeline_class,
@@ -149,77 +164,72 @@ class AppHandler:
             retake_pipeline_class=retake_pipeline_class,
             config=config,
         )
-
-        self.generation = GenerationHandler(state=self.state, lock=self._lock, config=config)
-
-        self.video_generation = VideoGenerationHandler(
+        
+        self.runtime_policy = RuntimePolicyHandler(
             state=self.state,
             lock=self._lock,
-            generation_handler=self.generation,
-            pipelines_handler=self.pipelines,
-            text_handler=self.text,
-            ltx_api_client=ltx_api_client,
             config=config,
         )
-
-        self.image_generation = ImageGenerationHandler(
-            state=self.state,
-            lock=self._lock,
-            generation_handler=self.generation,
-            pipelines_handler=self.pipelines,
-            config=config,
-            zit_api_client=zit_api_client,
-        )
-
+        
         self.health = HealthHandler(
             state=self.state,
             lock=self._lock,
-            models_handler=self.models,
             gpu_info=gpu_info,
             config=config,
         )
-
-        self.runtime_policy = RuntimePolicyHandler(config=config)
-
-        self.suggest_gap_prompt = SuggestGapPromptHandler(
+        
+        self.generation = GenerationHandler(
             state=self.state,
             lock=self._lock,
-            config=config,
-            http=http,
-        )
-
-        self.retake = RetakeHandler(
-            state=self.state,
-            lock=self._lock,
-            ltx_api_client=ltx_api_client,
-            config=config,
-            generation_handler=self.generation,
-            pipelines_handler=self.pipelines,
-            text_handler=self.text,
-        )
-
-        self.ic_lora = IcLoraHandler(
-            state=self.state,
-            lock=self._lock,
-            generation_handler=self.generation,
-            pipelines_handler=self.pipelines,
-            text_handler=self.text,
+            task_runner=task_runner,
             video_processor=video_processor,
             config=config,
         )
-
-        self.downloads.cleanup_downloading_dir()
-
-        self.load_persistent_state(default_settings)
-
-    def load_persistent_state(self, default_settings: AppSettings) -> None:
-        """Load persisted state from disk (settings, HF auth token, etc.)."""
-        self.settings.load_settings(default_settings)
-        self.hf_auth.load_token()
+        
+        self.video_generation = VideoGenerationHandler(
+            state=self.state,
+            lock=self._lock,
+            pipelines_handler=self.pipelines,
+            generation_handler=self.generation,
+            config=config,
+        )
+        
+        self.image_generation = ImageGenerationHandler(
+            state=self.state,
+            lock=self._lock,
+            pipelines_handler=self.pipelines,
+            generation_handler=self.generation,
+            config=config,
+        )
+        
+        self.ic_lora = IcLoraHandler(
+            state=self.state,
+            lock=self._lock,
+            pipelines_handler=self.pipelines,
+            generation_handler=self.generation,
+            config=config,
+        )
+        
+        self.retake = RetakeHandler(
+            state=self.state,
+            lock=self._lock,
+            pipelines_handler=self.pipelines,
+            generation_handler=self.generation,
+            config=config,
+        )
+        
+        self.suggest_gap_prompt = SuggestGapPromptHandler(
+            state=self.state,
+            lock=self._lock,
+            ltx_api_client=ltx_api_client,
+            zit_api_client=zit_api_client,
+            config=config,
+        )
 
 
 @dataclass
 class ServiceBundle:
+    """مجموعه سرویس‌های مورد نیاز برای ساخت AppHandler"""
     http: HTTPClient
     gpu_cleaner: GpuCleaner
     model_downloader: ModelDownloader
@@ -230,6 +240,8 @@ class ServiceBundle:
     ltx_api_client: LTXAPIClient
     zit_api_client: ZitAPIClient
     fast_video_pipeline_class: type[FastVideoPipeline]
+    hq_video_pipeline_class: type[HQVideoPipeline]
+    pro_video_pipeline_class: type[ProVideoPipeline]
     image_generation_pipeline_class: type[ImageGenerationPipeline]
     ic_lora_pipeline_class: type[IcLoraPipeline]
     depth_processor_pipeline_class: type[DepthProcessorPipeline]
@@ -238,47 +250,49 @@ class ServiceBundle:
     retake_pipeline_class: type[RetakePipeline]
 
 
-def build_default_service_bundle(config: RuntimeConfig) -> ServiceBundle:
-    """Build real runtime services with lazy heavy imports isolated from tests."""
-    from services.fast_video_pipeline.ltx_fast_video_pipeline import LTXFastVideoPipeline
-    from services.zit_api_client.zit_api_client_impl import ZitAPIClientImpl
-    from services.gpu_cleaner.torch_cleaner import TorchCleaner
-    from services.gpu_info.gpu_info_impl import GpuInfoImpl
-    from services.http_client.http_client_impl import HTTPClientImpl
-    from services.a2v_pipeline.ltx_a2v_pipeline import LTXa2vPipeline
+def build_default_service_bundle() -> ServiceBundle:
+    """ساخت بسته سرویس‌های پیش‌فرض با تمام pipelineهای مورد نیاز."""
+    from services.a2v_pipeline.ltx_a2v_pipeline import LTXA2VPipeline
     from services.depth_processor_pipeline.midas_dpt_pipeline import MidasDPTPipeline
+    from services.fast_video_pipeline.ltx_fast_video_pipeline import LTXFastVideoPipeline
+    from services.gpu_cleaner.torch_cleaner import TorchCleaner
+    from services.gpu_info.gpu_info_impl import GPUInfoImpl
+    from services.hq_video_pipeline.ltx_hq_video_pipeline import LTXHQVideoPipeline
+    from services.http_client.http_client_impl import HTTPClientImpl
     from services.ic_lora_pipeline.ltx_ic_lora_pipeline import LTXIcLoraPipeline
-    from services.image_generation_pipeline.zit_image_generation_pipeline import ZitImageGenerationPipeline
+    from services.image_generation_pipeline.zit_image_generation_pipeline import (
+        ZitImageGenerationPipeline,
+    )
     from services.ltx_api_client.ltx_api_client_impl import LTXAPIClientImpl
-    from services.model_downloader.hugging_face_downloader import HuggingFaceDownloader
-    from services.retake_pipeline.ltx_retake_pipeline import LTXRetakePipeline
+    from services.model_downloader.hugging_face_downloader import (
+        HuggingFaceDownloader,
+    )
     from services.pose_processor_pipeline.dw_pose_pipeline import DWPosePipeline
+    from services.pro_video_pipeline.ltx_pro_video_pipeline import LTXProVideoPipeline
+    from services.retake_pipeline.ltx_retake_pipeline import LTXRetakePipeline
     from services.task_runner.threading_runner import ThreadingRunner
     from services.text_encoder.ltx_text_encoder import LTXTextEncoder
     from services.video_processor.video_processor_impl import VideoProcessorImpl
-
-    http = HTTPClientImpl()
+    from services.zit_api_client.zit_api_client_impl import ZitAPIClientImpl
 
     return ServiceBundle(
-        http=http,
-        gpu_cleaner=TorchCleaner(device=config.device),
-        model_downloader=HuggingFaceDownloader(),
-        gpu_info=GpuInfoImpl(),
-        video_processor=VideoProcessorImpl(),
-        text_encoder=LTXTextEncoder(
-            device=config.device,
-            http=http,
-            ltx_api_base_url=config.ltx_api_base_url,
-        ),
-        task_runner=ThreadingRunner(),
-        ltx_api_client=LTXAPIClientImpl(http=http, ltx_api_base_url=config.ltx_api_base_url),
-        zit_api_client=ZitAPIClientImpl(http=http),
+        http=HTTPClientImpl,
+        gpu_cleaner=TorchCleaner,
+        model_downloader=HuggingFaceDownloader,
+        gpu_info=GPUInfoImpl,
+        video_processor=VideoProcessorImpl,
+        text_encoder=LTXTextEncoder,
+        task_runner=ThreadingRunner,
+        ltx_api_client=LTXAPIClientImpl,
+        zit_api_client=ZitAPIClientImpl,
         fast_video_pipeline_class=LTXFastVideoPipeline,
+        hq_video_pipeline_class=LTXHQVideoPipeline,
+        pro_video_pipeline_class=LTXProVideoPipeline,
         image_generation_pipeline_class=ZitImageGenerationPipeline,
         ic_lora_pipeline_class=LTXIcLoraPipeline,
         depth_processor_pipeline_class=MidasDPTPipeline,
         pose_processor_pipeline_class=DWPosePipeline,
-        a2v_pipeline_class=LTXa2vPipeline,
+        a2v_pipeline_class=LTXA2VPipeline,
         retake_pipeline_class=LTXRetakePipeline,
     )
 
@@ -286,27 +300,40 @@ def build_default_service_bundle(config: RuntimeConfig) -> ServiceBundle:
 def build_initial_state(
     config: RuntimeConfig,
     default_settings: AppSettings,
-    service_bundle: ServiceBundle | None = None,
+    services: ServiceBundle | None = None,
 ) -> AppHandler:
-    bundle = service_bundle or build_default_service_bundle(config)
+    """
+    ساخت state اولیه برنامه با سرویس‌های داده شده.
+    
+    Args:
+        config: تنظیمات زمان اجرا
+        default_settings: تنظیمات پیش‌فرض برنامه
+        services: بسته سرویس‌ها (در صورت نبود، از پیش‌فرض استفاده می‌شود)
+    
+    Returns:
+        AppHandler: نمونه پیکربندی شده AppHandler
+    """
+    service_bundle = services or build_default_service_bundle()
 
     return AppHandler(
         config=config,
         default_settings=default_settings,
-        http=bundle.http,
-        gpu_cleaner=bundle.gpu_cleaner,
-        model_downloader=bundle.model_downloader,
-        gpu_info=bundle.gpu_info,
-        video_processor=bundle.video_processor,
-        text_encoder=bundle.text_encoder,
-        task_runner=bundle.task_runner,
-        ltx_api_client=bundle.ltx_api_client,
-        zit_api_client=bundle.zit_api_client,
-        fast_video_pipeline_class=bundle.fast_video_pipeline_class,
-        image_generation_pipeline_class=bundle.image_generation_pipeline_class,
-        ic_lora_pipeline_class=bundle.ic_lora_pipeline_class,
-        depth_processor_pipeline_class=bundle.depth_processor_pipeline_class,
-        pose_processor_pipeline_class=bundle.pose_processor_pipeline_class,
-        a2v_pipeline_class=bundle.a2v_pipeline_class,
-        retake_pipeline_class=bundle.retake_pipeline_class,
+        http=service_bundle.http,
+        gpu_cleaner=service_bundle.gpu_cleaner,
+        model_downloader=service_bundle.model_downloader,
+        gpu_info=service_bundle.gpu_info,
+        video_processor=service_bundle.video_processor,
+        text_encoder=service_bundle.text_encoder,
+        task_runner=service_bundle.task_runner,
+        ltx_api_client=service_bundle.ltx_api_client,
+        zit_api_client=service_bundle.zit_api_client,
+        fast_video_pipeline_class=service_bundle.fast_video_pipeline_class,
+        hq_video_pipeline_class=service_bundle.hq_video_pipeline_class,
+        pro_video_pipeline_class=service_bundle.pro_video_pipeline_class,
+        image_generation_pipeline_class=service_bundle.image_generation_pipeline_class,
+        ic_lora_pipeline_class=service_bundle.ic_lora_pipeline_class,
+        depth_processor_pipeline_class=service_bundle.depth_processor_pipeline_class,
+        pose_processor_pipeline_class=service_bundle.pose_processor_pipeline_class,
+        a2v_pipeline_class=service_bundle.a2v_pipeline_class,
+        retake_pipeline_class=service_bundle.retake_pipeline_class,
     )
