@@ -1,3 +1,6 @@
+# backend/handlers/pipelines_handler.py
+# Version: V2.0 / deepseek edit - 2026-07-15
+
 """Pipeline lifecycle handler."""
 
 from __future__ import annotations
@@ -21,6 +24,8 @@ from services.interfaces import (
     A2VPipeline,
     DepthProcessorPipeline,
     FastVideoPipeline,
+    HQVideoPipeline,
+    ProVideoPipeline,
     ImageGenerationPipeline,
     GpuCleaner,
     IcLoraPipeline,
@@ -55,6 +60,8 @@ class PipelinesHandler(StateHandlerBase):
         text_handler: TextHandler,
         gpu_cleaner: GpuCleaner,
         fast_video_pipeline_class: type[FastVideoPipeline],
+        hq_video_pipeline_class: type[HQVideoPipeline],
+        pro_video_pipeline_class: type[ProVideoPipeline],
         image_generation_pipeline_class: type[ImageGenerationPipeline],
         ic_lora_pipeline_class: type[IcLoraPipeline],
         depth_processor_pipeline_class: type[DepthProcessorPipeline],
@@ -67,6 +74,8 @@ class PipelinesHandler(StateHandlerBase):
         self._text_handler = text_handler
         self._gpu_cleaner = gpu_cleaner
         self._fast_video_pipeline_class = fast_video_pipeline_class
+        self._hq_video_pipeline_class = hq_video_pipeline_class
+        self._pro_video_pipeline_class = pro_video_pipeline_class
         self._image_generation_pipeline_class = image_generation_pipeline_class
         self._ic_lora_pipeline_class = ic_lora_pipeline_class
         self._depth_processor_pipeline_class = depth_processor_pipeline_class
@@ -134,7 +143,17 @@ class PipelinesHandler(StateHandlerBase):
         checkpoint_path = str(get_existing_cp_path(self.models_dir, spec.model_cp))
         upsampler_path = str(get_existing_cp_path(self.models_dir, spec.upscale_cp))
 
-        pipeline = self._fast_video_pipeline_class.create(
+        # انتخاب کلاس pipeline بر اساس نوع مدل
+        if model_type == "fast":
+            pipeline_class = self._fast_video_pipeline_class
+        elif model_type == "fast_hq":
+            pipeline_class = self._hq_video_pipeline_class
+        elif model_type == "pro":
+            pipeline_class = self._pro_video_pipeline_class
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
+
+        pipeline = pipeline_class.create(
             checkpoint_path,
             gemma_root,
             upsampler_path,
