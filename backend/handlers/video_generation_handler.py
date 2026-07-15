@@ -1,3 +1,6 @@
+# backend/handlers/video_generation_handler.py
+# Version: V2.0 / deepseek edit - 2026-07-15
+
 """Video generation orchestration handler."""
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 FORCED_API_MODEL_MAP: dict[str, str] = {
     "fast": "ltx-2-3-fast",
+    "fast_hq": "ltx-2-3-fast-hq",
     "pro": "ltx-2-3-pro",
 }
 FORCED_API_RESOLUTION_MAP: dict[str, dict[str, str]] = {
@@ -98,12 +102,13 @@ class VideoGenerationHandler(StateHandlerBase):
         resolution = req.resolution
         duration = req.duration
         fps = req.fps
+        model = req.model  # "fast", "fast_hq", "pro"
 
         audio_path = normalize_optional_path(req.audioPath)
         if audio_path:
             return self._generate_a2v(req, duration, fps, audio_path=audio_path)
 
-        logger.info("Resolution %s - using fast pipeline", resolution)
+        logger.info("Resolution %s - using pipeline: %s", resolution, model)
 
         RESOLUTION_MAP_16_9: dict[str, tuple[int, int]] = {
             "540p": (960, 544),
@@ -126,6 +131,8 @@ class VideoGenerationHandler(StateHandlerBase):
                 width, height = get_9_16_size(resolution)
             case "16:9":
                 width, height = get_16_9_size(resolution)
+            case _:
+                raise HTTPError(400, "INVALID_ASPECT_RATIO")
 
         num_frames = self._compute_num_frames(duration, fps)
 
@@ -139,7 +146,7 @@ class VideoGenerationHandler(StateHandlerBase):
         seed = self._resolve_seed()
 
         try:
-            self._pipelines.load_gpu_pipeline("fast")
+            self._pipelines.load_gpu_pipeline(model)  # now supports fast, fast_hq, pro
             self._generation.start_generation(generation_id)
 
             output_path = self.generate_video(
@@ -152,6 +159,7 @@ class VideoGenerationHandler(StateHandlerBase):
                 seed=seed,
                 camera_motion=req.cameraMotion,
                 negative_prompt=req.negativePrompt,
+                model=model,
             )
 
             self._generation.complete_generation(output_path)
@@ -179,19 +187,28 @@ class VideoGenerationHandler(StateHandlerBase):
         seed: int,
         camera_motion: VideoCameraMotion,
         negative_prompt: str,
+        model: str = "fast",
     ) -> str:
         t_total_start = time.perf_counter()
         gen_mode = "i2v" if image is not None else "t2v"
-        logger.info("[%s] Generation started (model=fast, %dx%d, %d frames, %d fps)", gen_mode, width, height, num_frames, int(fps))
+        logger.info("[%s] Generation started (model=%s, %dx%d, %d frames, %d fps)", gen_mode, model, width, height, num_frames, int(fps))
 
         if self._generation.is_generation_cancelled():
             raise RuntimeError("Generation was cancelled")
 
-        total_steps = 8
+        # تعداد stepها بر اساس مدل
+        if model == "fast":
+            total_steps = 8
+        elif model == "fast_hq":
+            total_steps = 16
+        elif model == "pro":
+            total_steps = 30
+        else:
+            total_steps = 8
 
         self._generation.update_progress("loading_model", 5, 0, total_steps)
         t_load_start = time.perf_counter()
-        pipeline_state = self._pipelines.load_gpu_pipeline("fast")
+        pipeline_state = self._pipelines.load_gpu_pipeline(model)  # now supports all
         t_load_end = time.perf_counter()
         logger.info("[%s] Pipeline load: %.2fs", gen_mode, t_load_end - t_load_start)
 
@@ -237,6 +254,7 @@ class VideoGenerationHandler(StateHandlerBase):
                 frame_rate=fps,
                 images=images,
                 output_path=str(output_path),
+                num_inference_steps=total_steps,  # اضافه شد
             )
             t_inference_end = time.perf_counter()
             logger.info("[%s] Inference: %.2fs", gen_mode, t_inference_end - t_inference_start)
